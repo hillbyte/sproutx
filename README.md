@@ -8,8 +8,9 @@ just types for you.
 
 ## Try it
 
-Either install from source (needs Rust), or grab a prebuilt binary from the
-Releases page:
+Either install from source (needs Rust), or grab the prebuilt Linux binary
+(x86_64) from the Releases page. Other architectures: build from source —
+you'll need `libxkbcommon-dev` (you already have it if you run a desktop).
 
 ```sh
 cargo install --git https://github.com/hillbyte/sproutx --tag v0.1.0
