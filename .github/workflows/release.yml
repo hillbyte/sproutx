@@ -16,19 +16,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: arm64 sysroot (cross libxkbcommon)
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
+      - name: xkbcommon dev libraries
         run: |
           set -e
-          sudo dpkg --add-architecture arm64
-          # the runner's http mirrors 404 on foreign-arch indexes, so add
-          # Ubuntu Ports for arm64 packages over https
-          echo "deb [arch=arm64] https://ports.ubuntu.com/ubuntu-ports noble main universe" \
-            | sudo tee /etc/apt/sources.list.d/arm64.list >/dev/null
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo dpkg --add-architecture arm64
+            # the runner's http mirrors 404 on foreign-arch indexes, so add
+            # Ubuntu Ports for arm64 packages over https
+            echo "deb [arch=arm64] https://ports.ubuntu.com/ubuntu-ports noble main universe" \
+              | sudo tee /etc/apt/sources.list.d/arm64.list >/dev/null
+          fi
           for i in 1 2 3; do
             sudo apt-get update -qq && break || sleep 5
           done
-          sudo apt-get install -y -qq libxkbcommon-dev:arm64
+          sudo apt-get install -y -qq libxkbcommon-dev
+          if [ "${{ matrix.target }}" = "aarch64-unknown-linux-gnu" ]; then
+            sudo apt-get install -y -qq libxkbcommon-dev:arm64
+          fi
 
       - uses: dtolnay/rust-toolchain@stable
         with:
