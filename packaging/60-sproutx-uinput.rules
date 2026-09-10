@@ -1,0 +1,4 @@
+# sproutx: let users in the `input` group inject keystrokes via uinput.
+# Install: sudo cp packaging/60-sproutx-uinput.rules /etc/udev/rules.d/
+#          sudo udevadm control --reload && sudo udevadm trigger
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="input", MODE="0660"
