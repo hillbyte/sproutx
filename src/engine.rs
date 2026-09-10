@@ -5,10 +5,11 @@ pub struct Engine {
     sorted: Vec<(String, String)>,
     ambiguous: std::collections::HashSet<String>,
     depth: usize,
+    pub delay_ms: u64,
 }
 
 impl Engine {
-    pub fn new(rules: &[Rule], depth: usize) -> Engine {
+    pub fn new(rules: &[Rule], depth: usize, delay_ms: u64) -> Engine {
         let mut sorted: Vec<(String, String)> = rules
             .iter()
             .flat_map(|r| {
@@ -40,6 +41,7 @@ impl Engine {
             sorted,
             ambiguous,
             depth: if depth == 0 { 64 } else { depth },
+            delay_ms: if delay_ms == 0 { 12 } else { delay_ms },
         }
     }
 
@@ -93,25 +95,18 @@ impl Engine {
     }
 
     /// Push one typed char into `buffer` (respecting depth) and return any
-    /// expansion that should happen *now*, if the matcher spawned one.
-    pub fn feed_char(
-        &self,
-        buffer: &mut Vec<char>,
-        depth: usize,
-        ch: char,
-    ) -> Option<(String, String)> {
+    /// expansion that should happen *now*.
+    ///
+    /// The buffer is trimmed when it exceeds `depth + 1`, but the same match
+    /// logic always runs afterwards, so a trigger fires reliably even in the
+    /// middle of a long line of typed text.
+    pub fn feed_char(&self, buffer: &mut Vec<char>, ch: char) -> Option<(String, String)> {
         let is_delim = !ch.is_alphanumeric() && ch != '_';
         buffer.push(ch);
-        let cap = depth.max(1) + 1;
+        let cap = self.depth.max(1) + 1;
         if buffer.len() > cap {
             let excess = buffer.len() - cap;
             buffer.drain(0..excess);
-            if is_delim {
-                if let Some(m) = self.match_window(buffer, buffer.len()) {
-                    return Some(m);
-                }
-            }
-            return None;
         }
         if is_delim {
             // Delimiter typed: try a trigger that itself ends with the delimiter

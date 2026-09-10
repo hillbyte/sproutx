@@ -61,11 +61,15 @@ pub fn serve(
                     let layout = crate::config::resolve_layout(&cfg.layout);
                     let n = {
                         let mut eng = engine.lock().unwrap();
-                        *eng = crate::engine::Engine::new(&cfg.rules, cfg.depth);
+                        *eng = crate::engine::Engine::new(&cfg.rules, cfg.depth, cfg.delay_ms);
                         eng.rules().len()
                     };
                     crate::info!("config reloaded from {}", cfg_path.display());
-                    format!("ok layout={layout} rules={n}")
+                    format!(
+                        "ok layout={layout} rules={n} depth={} delay_ms={}",
+                        cfg.depth.max(1),
+                        cfg.delay_ms.max(1)
+                    )
                 }
                 Err(e) => format!("err: {e}"),
             },

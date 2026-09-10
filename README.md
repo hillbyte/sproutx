@@ -13,7 +13,7 @@ Either install from source (needs Rust), or grab the prebuilt Linux binary
 you'll need `libxkbcommon-dev` (you already have it if you run a desktop).
 
 ```sh
-cargo install --git https://github.com/hillbyte/sproutx --tag v0.1.0
+cargo install --git https://github.com/hillbyte/sproutx --tag v0.1.1
 ```
 
 Then:
@@ -60,7 +60,9 @@ Anything inside `{{ }}` is dynamic: `{{today}}`, `{{time}}`, `{{now}}`,
       jane@example.com
 ```
 
-While the daemon runs, `sproutx reload` picks up saved changes.
+While the daemon runs, `sproutx reload` picks up saved changes — rules,
+`depth`, and `delay_ms` reload live. A `layout` change still needs a daemon
+restart.
 
 ## How it works
 

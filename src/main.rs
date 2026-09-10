@@ -256,6 +256,10 @@ fn cmd_add(trigger: &str, replacement: &str) {
         eprintln!("cannot append to {}: {e}", path.display());
         std::process::exit(1);
     }
+    if let Err(e) = config::load(&path) {
+        eprintln!("warning: {} no longer parses: {e}", path.display());
+        eprintln!("fix the YAML before running `sproutx reload`");
+    }
     println!("added to {}", path.display());
     println!("run `sproutx reload` (if daemon is running)");
 }
@@ -269,10 +273,10 @@ fn cmd_test(text: &str) {
             std::process::exit(1);
         }
     };
-    let eng = engine::Engine::new(&cfg.rules, cfg.depth);
+    let eng = engine::Engine::new(&cfg.rules, cfg.depth, cfg.delay_ms);
     let mut buffer: Vec<char> = Vec::new();
     for ch in text.chars() {
-        if let Some((trig, repl)) = eng.feed_char(&mut buffer, cfg.depth, ch) {
+        if let Some((trig, repl)) = eng.feed_char(&mut buffer, ch) {
             println!("matched {trig:?} -> {repl:?}");
             println!("       rendered as -> {:?}", engine::render(&repl));
             buffer.clear();

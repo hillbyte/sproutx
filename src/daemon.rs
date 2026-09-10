@@ -24,8 +24,6 @@ struct Core {
     planner: Planner,
     injector: Injector,
     buffer: Vec<char>,
-    depth: usize,
-    delay: Duration,
 }
 
 impl Core {
@@ -46,25 +44,33 @@ impl Core {
                     return;
                 }
                 if code == KeyCode::KEY_ENTER.code() || code == KeyCode::KEY_ESC.code() {
-                    let hit = engine.lock().unwrap().match_at_end(&self.buffer);
-                    if let Some((trig, repl)) = hit {
-                        self.expand(trig, repl);
-                    } else {
-                        self.buffer.clear();
+                    let hit = {
+                        let e = engine.lock().unwrap();
+                        e.match_at_end(&self.buffer)
+                            .map(|(trig, repl)| (trig, repl, e.delay_ms))
+                    };
+                    match hit {
+                        Some((trig, repl, delay_ms)) => {
+                            self.expand(trig, repl, Duration::from_millis(delay_ms.max(1)))
+                        }
+                        None => self.buffer.clear(),
                     }
                     return;
                 }
                 if let Some(text) = text {
-                    for ch in text.chars() {
-                        let hit = {
-                            engine
-                                .lock()
-                                .unwrap()
-                                .feed_char(&mut self.buffer, self.depth, ch)
-                        };
-                        if let Some((trig, repl)) = hit {
-                            self.expand(trig, repl);
+                    let hit = {
+                        let e = engine.lock().unwrap();
+                        let mut hit = None;
+                        for ch in text.chars() {
+                            if let Some((trig, repl)) = e.feed_char(&mut self.buffer, ch) {
+                                hit = Some((trig, repl, e.delay_ms));
+                                break;
+                            }
                         }
+                        hit
+                    };
+                    if let Some((trig, repl, delay_ms)) = hit {
+                        self.expand(trig, repl, Duration::from_millis(delay_ms.max(1)));
                     }
                 }
             }
@@ -74,12 +80,12 @@ impl Core {
         }
     }
 
-    fn expand(&mut self, trig: String, repl: String) {
+    fn expand(&mut self, trig: String, repl: String, delay: Duration) {
         let tl = trig.chars().count();
         info!("expand {trig:?} -> {repl:?}");
-        self.injector.backspace_n(tl, self.delay);
+        self.injector.backspace_n(tl, delay);
         let rendered = engine::render(&repl);
-        self.injector.type_text(&self.planner, &rendered, self.delay);
+        self.injector.type_text(&self.planner, &rendered, delay);
         self.buffer.clear();
     }
 }
@@ -108,7 +114,7 @@ pub fn run(verbose: bool) -> Result<(), String> {
         crate::injector::VDEV_NAME
     );
 
-    let engine = Arc::new(Mutex::new(Engine::new(&cfg.rules, cfg.depth)));
+    let engine = Arc::new(Mutex::new(Engine::new(&cfg.rules, cfg.depth, cfg.delay_ms)));
     let running = Arc::new(AtomicBool::new(true));
 
     let sock = ipc::socket_path();
@@ -146,14 +152,11 @@ pub fn run(verbose: bool) -> Result<(), String> {
         }
     }
 
-    let delay = Duration::from_millis(cfg.delay_ms.max(1));
     let mut core = Core {
         reader,
         planner,
         injector,
         buffer: Vec::new(),
-        depth: cfg.depth.max(1),
-        delay,
     };
 
     let mut last_hotplug = Instant::now() - Duration::from_secs(4);
