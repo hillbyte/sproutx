@@ -19,8 +19,15 @@ jobs:
       - name: arm64 sysroot (cross libxkbcommon)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
         run: |
+          set -e
           sudo dpkg --add-architecture arm64
-          sudo apt-get update -qq
+          # the runner's http mirrors 404 on foreign-arch indexes, so add
+          # Ubuntu Ports for arm64 packages over https
+          echo "deb [arch=arm64] https://ports.ubuntu.com/ubuntu-ports noble main universe" \
+            | sudo tee /etc/apt/sources.list.d/arm64.list >/dev/null
+          for i in 1 2 3; do
+            sudo apt-get update -qq && break || sleep 5
+          done
           sudo apt-get install -y -qq libxkbcommon-dev:arm64
 
       - uses: dtolnay/rust-toolchain@stable
