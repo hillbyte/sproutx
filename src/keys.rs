@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use xkbcommon::xkb::{self, Keycode, Keymap, Keysym, State};
 
 /// Offset between kernel evdev keycodes and XKB keycodes.
@@ -55,42 +56,28 @@ pub fn compile(layout: &str) -> Option<Arc<Keymap>> {
     }
 }
 
-/// Decodes keystrokes into utf8 text, tracking modifier state.
+/// Decodes keystrokes into utf8 text, tracking layout state.
 ///
-/// Keys pressed while a "hotkey" modifier (Ctrl/Alt/Super) is held are
-/// shortcut gestures (copy, paste, workspace switch) rather than text, so
-/// they are never fed to the matcher as characters.
+/// Keys pressed right after a "hotkey" modifier (Ctrl/Alt/Super) are shortcut
+/// gestures (copy, paste, workspace switch) rather than text, so they are not
+/// fed to the matcher. Suppression is *time-windowed* on the raw key events,
+/// never derived from held-modifier state: a stuck or missed release can never
+/// freeze the decoder, it only skips keys within a short chord window.
 pub struct Reader {
     state: State,
-    suppress: u32,
+    last_hotkey: Instant,
 }
+
+/// Window (after a hotkey key event) during which printable keys are treated
+/// as part of a shortcut chord rather than as text.
+const HOTKEY_WINDOW: Duration = Duration::from_millis(250);
 
 impl Reader {
     pub fn new(keymap: &Arc<Keymap>) -> Reader {
-        let idx = |n: &str| -> u32 {
-            let i = keymap.mod_get_index(n);
-            if i != u32::MAX && i < 32 {
-                1u32 << i
-            } else {
-                0
-            }
-        };
-        let mut suppress = 0u32;
-        for n in ["Control", "Mod1", "Alt", "Mod3", "Mod4", "Meta", "Super"] {
-            suppress |= idx(n);
-        }
         Reader {
             state: State::new(keymap),
-            suppress,
+            last_hotkey: Instant::now() - HOTKEY_WINDOW,
         }
-    }
-
-    /// True when a Ctrl/Alt/Super-type modifier is currently held down
-    /// (Shift, CapsLock and AltGr/Mod2 are typing modifiers, so they are
-    /// deliberately excluded).
-    fn hotkey_active(&self) -> bool {
-        const ACTIVE: u32 = xkb::STATE_MODS_DEPRESSED | xkb::STATE_MODS_LATCHED;
-        self.suppress != 0 && (self.suppress & self.state.serialize_mods(ACTIVE)) != 0
     }
 
     /// value: 0 = release, 1 = press, 2 = repeat.
@@ -100,11 +87,19 @@ impl Reader {
         match value {
             0 => {
                 self.state.update_key(kc, xkb::KeyDirection::Up);
+                if HOTKEY_MOD_KEYS.contains(&evcode) {
+                    self.last_hotkey = Instant::now();
+                }
                 None
             }
             1 => {
                 self.state.update_key(kc, xkb::KeyDirection::Down);
-                if self.hotkey_active() {
+                if HOTKEY_MOD_KEYS.contains(&evcode) {
+                    self.last_hotkey = Instant::now();
+                    return None;
+                }
+                if self.last_hotkey.elapsed() < HOTKEY_WINDOW {
+                    debug!("skipped {evcode} (inside hotkey chord)");
                     return None;
                 }
                 let s = self.state.key_get_utf8(kc);
@@ -116,6 +111,9 @@ impl Reader {
             }
             _ => {
                 self.state.update_key(kc, xkb::KeyDirection::Down);
+                if HOTKEY_MOD_KEYS.contains(&evcode) {
+                    self.last_hotkey = Instant::now();
+                }
                 None
             }
         }
@@ -277,13 +275,14 @@ mod tests {
         let mut r = reader();
         r.on_event(KEY_LEFTCTRL, 1);
         assert!(r.on_event(30, 1).is_none());
+        assert!(r.on_event(39, 1).is_none()); // ';' as in Ctrl+% shortcuts
     }
 
     #[test]
     fn suppresses_super_chord() {
         let mut r = reader();
         r.on_event(KEY_LEFTMETA, 1);
-        assert!(r.on_event(2, 1).is_none());
+        assert!(r.on_event(2, 1).is_none()); // workspace digit
     }
 
     #[test]
@@ -294,10 +293,11 @@ mod tests {
     }
 
     #[test]
-    fn shift_still_allows_chars_after_ctrl_release() {
+    fn decodes_normally_once_chord_window_passes() {
         let mut r = reader();
         r.on_event(KEY_LEFTCTRL, 1);
         r.on_event(KEY_LEFTCTRL, 0);
+        std::thread::sleep(Duration::from_millis(300));
         assert_eq!(r.on_event(30, 1).unwrap(), "a");
     }
 }

@@ -10,11 +10,11 @@ just types for you.
 
 ### Prebuilt binary (no Rust needed)
 
-Download `sproutx-v0.1.3-linux-x86_64.tar.gz` from the Releases page, then:
+Download `sproutx-v0.1.4-linux-x86_64.tar.gz` from the Releases page, then:
 
 ```sh
 mkdir -p ~/.local/bin
-tar -xzf sproutx-v0.1.3-linux-x86_64.tar.gz -C ~/.local/bin
+tar -xzf sproutx-v0.1.4-linux-x86_64.tar.gz -C ~/.local/bin
 ```
 
 No libraries to install — desktops already ship `libxkbcommon`. Only x86_64
@@ -23,7 +23,7 @@ binaries are published; other architectures should build from source.
 ### From source (needs Rust + libxkbcommon-dev)
 
 ```sh
-cargo install --git https://github.com/hillbyte/sproutx --tag v0.1.3
+cargo install --git https://github.com/hillbyte/sproutx --tag v0.1.4
 ```
 
 Then:
