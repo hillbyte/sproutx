@@ -8,11 +8,24 @@ pub const KEY_BACKSPACE: u16 = 14;
 pub const KEY_TAB: u16 = 15;
 pub const KEY_ENTER: u16 = 28;
 #[allow(dead_code)]
-pub const KEY_LEFTCTRL: u16 = 29; // reserved (ctrl-combos are not expanded)
+pub const KEY_RIGHTCTRL: u16 = 97;
+pub const KEY_LEFTCTRL: u16 = 29;
 pub const KEY_LEFTSHIFT: u16 = 42;
 pub const KEY_LEFTALT: u16 = 56;
 pub const KEY_RIGHTALT: u16 = 100;
 pub const KEY_LEFTMETA: u16 = 125;
+pub const KEY_RIGHTMETA: u16 = 126;
+
+/// Modifier keys that signal a shortcut/gesture (context change) rather
+/// than plain typing. Shift is deliberately excluded.
+pub const HOTKEY_MOD_KEYS: [u16; 6] = [
+    KEY_LEFTCTRL,
+    KEY_RIGHTCTRL,
+    KEY_LEFTALT,
+    KEY_RIGHTALT,
+    KEY_LEFTMETA,
+    KEY_RIGHTMETA,
+];
 
 pub fn compile(layout: &str) -> Option<Arc<Keymap>> {
     let ctx = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
@@ -43,15 +56,41 @@ pub fn compile(layout: &str) -> Option<Arc<Keymap>> {
 }
 
 /// Decodes keystrokes into utf8 text, tracking modifier state.
+///
+/// Keys pressed while a "hotkey" modifier (Ctrl/Alt/Super) is held are
+/// shortcut gestures (copy, paste, workspace switch) rather than text, so
+/// they are never fed to the matcher as characters.
 pub struct Reader {
     state: State,
+    suppress: u32,
 }
 
 impl Reader {
     pub fn new(keymap: &Arc<Keymap>) -> Reader {
+        let idx = |n: &str| -> u32 {
+            let i = keymap.mod_get_index(n);
+            if i != u32::MAX && i < 32 {
+                1u32 << i
+            } else {
+                0
+            }
+        };
+        let mut suppress = 0u32;
+        for n in ["Control", "Mod1", "Alt", "Mod3", "Mod4", "Meta", "Super"] {
+            suppress |= idx(n);
+        }
         Reader {
             state: State::new(keymap),
+            suppress,
         }
+    }
+
+    /// True when a Ctrl/Alt/Super-type modifier is currently held down
+    /// (Shift, CapsLock and AltGr/Mod2 are typing modifiers, so they are
+    /// deliberately excluded).
+    fn hotkey_active(&self) -> bool {
+        const ACTIVE: u32 = xkb::STATE_MODS_DEPRESSED | xkb::STATE_MODS_LATCHED;
+        self.suppress != 0 && (self.suppress & self.state.serialize_mods(ACTIVE)) != 0
     }
 
     /// value: 0 = release, 1 = press, 2 = repeat.
@@ -65,6 +104,9 @@ impl Reader {
             }
             1 => {
                 self.state.update_key(kc, xkb::KeyDirection::Down);
+                if self.hotkey_active() {
+                    return None;
+                }
                 let s = self.state.key_get_utf8(kc);
                 if s.is_empty() || s.chars().all(|c| c.is_control()) {
                     None
@@ -208,5 +250,54 @@ impl Planner {
         } else {
             Some(kcs)
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reader() -> Reader {
+        Reader::new(&compile("us").unwrap())
+    }
+
+    #[test]
+    fn decodes_plain_letter() {
+        assert_eq!(reader().on_event(30, 1).unwrap(), "a");
+    }
+
+    #[test]
+    fn decodes_shifted_letter() {
+        let mut r = reader();
+        r.on_event(KEY_LEFTSHIFT, 1);
+        assert_eq!(r.on_event(30, 1).unwrap(), "A");
+    }
+
+    #[test]
+    fn suppresses_ctrl_chord() {
+        let mut r = reader();
+        r.on_event(KEY_LEFTCTRL, 1);
+        assert!(r.on_event(30, 1).is_none());
+    }
+
+    #[test]
+    fn suppresses_super_chord() {
+        let mut r = reader();
+        r.on_event(KEY_LEFTMETA, 1);
+        assert!(r.on_event(2, 1).is_none());
+    }
+
+    #[test]
+    fn suppresses_alt_chord() {
+        let mut r = reader();
+        r.on_event(KEY_LEFTALT, 1);
+        assert!(r.on_event(30, 1).is_none());
+    }
+
+    #[test]
+    fn shift_still_allows_chars_after_ctrl_release() {
+        let mut r = reader();
+        r.on_event(KEY_LEFTCTRL, 1);
+        r.on_event(KEY_LEFTCTRL, 0);
+        assert_eq!(r.on_event(30, 1).unwrap(), "a");
     }
 }

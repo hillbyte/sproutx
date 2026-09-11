@@ -24,6 +24,7 @@ struct Core {
     planner: Planner,
     injector: Injector,
     buffer: Vec<char>,
+    last_activity: Instant,
 }
 
 impl Core {
@@ -31,6 +32,7 @@ impl Core {
         if ev.event_type() != EventType::KEY {
             return;
         }
+        self.last_activity = Instant::now();
         let code = ev.code();
         let value = ev.value();
         match value {
@@ -41,9 +43,13 @@ impl Core {
                 let text = self.reader.on_event(code, 1);
                 if code == KeyCode::KEY_BACKSPACE.code() {
                     self.buffer.pop();
+                    debug!("backspace -> buffer {:?}", self.buf_tail());
                     return;
                 }
-                if code == KeyCode::KEY_ENTER.code() || code == KeyCode::KEY_ESC.code() {
+                if code == KeyCode::KEY_ENTER.code()
+                    || code == KeyCode::KEY_KPENTER.code()
+                    || code == KeyCode::KEY_ESC.code()
+                {
                     let hit = {
                         let e = engine.lock().unwrap();
                         e.match_at_end(&self.buffer)
@@ -57,11 +63,17 @@ impl Core {
                     }
                     return;
                 }
+                if keys::HOTKEY_MOD_KEYS.contains(&code) && !self.buffer.is_empty() {
+                    debug!("cleared buffer on shortcut key");
+                    self.buffer.clear();
+                    return;
+                }
                 if let Some(text) = text {
                     let hit = {
                         let e = engine.lock().unwrap();
                         let mut hit = None;
                         for ch in text.chars() {
+                            debug!("feed {ch:?} -> buffer {:?}", self.buf_tail());
                             if let Some((trig, repl)) = e.feed_char(&mut self.buffer, ch) {
                                 hit = Some((trig, repl, e.delay_ms));
                                 break;
@@ -80,13 +92,19 @@ impl Core {
         }
     }
 
+    fn buf_tail(&self) -> String {
+        self.buffer.iter().collect::<String>()
+    }
+
     fn expand(&mut self, trig: String, repl: String, delay: Duration) {
         let tl = trig.chars().count();
         info!("expand {trig:?} -> {repl:?}");
         self.injector.backspace_n(tl, delay);
+        std::thread::sleep(Duration::from_millis(40));
         let rendered = engine::render(&repl);
         self.injector.type_text(&self.planner, &rendered, delay);
         self.buffer.clear();
+        self.last_activity = Instant::now();
     }
 }
 
@@ -157,6 +175,7 @@ pub fn run(verbose: bool) -> Result<(), String> {
         planner,
         injector,
         buffer: Vec::new(),
+        last_activity: Instant::now(),
     };
 
     let mut last_hotplug = Instant::now() - Duration::from_secs(4);
@@ -172,6 +191,10 @@ pub fn run(verbose: bool) -> Result<(), String> {
                     break;
                 }
             }
+        }
+        if !core.buffer.is_empty() && core.last_activity.elapsed() >= Duration::from_millis(2000) {
+            debug!("cleared buffer on idle");
+            core.buffer.clear();
         }
         if last_hotplug.elapsed() >= Duration::from_secs(3) {
             spawn_new(&tx, &opened);

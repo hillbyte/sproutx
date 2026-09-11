@@ -8,12 +8,22 @@ just types for you.
 
 ## Try it
 
-Either install from source (needs Rust), or grab the prebuilt Linux binary
-(x86_64) from the Releases page. Other architectures: build from source —
-you'll need `libxkbcommon-dev` (you already have it if you run a desktop).
+### Prebuilt binary (no Rust needed)
+
+Download `sproutx-v0.1.3-linux-x86_64.tar.gz` from the Releases page, then:
 
 ```sh
-cargo install --git https://github.com/hillbyte/sproutx --tag v0.1.2
+mkdir -p ~/.local/bin
+tar -xzf sproutx-v0.1.3-linux-x86_64.tar.gz -C ~/.local/bin
+```
+
+No libraries to install — desktops already ship `libxkbcommon`. Only x86_64
+binaries are published; other architectures should build from source.
+
+### From source (needs Rust + libxkbcommon-dev)
+
+```sh
+cargo install --git https://github.com/hillbyte/sproutx --tag v0.1.3
 ```
 
 Then:
@@ -79,6 +89,9 @@ of a line/app). `going:fast` stays text, `going :fast` expands. Type the
 trigger, then finish it with a delimiter — space, Enter, or punctuation.
 When one trigger is a prefix of another (say `:t` and `:time`), the shorter one
 waits for a delimiter so it never hijacks the longer one.
+
+Shortcut chords (Ctrl/Caps-less Super/Alt + a key) are treated as gestures,
+not text, so copy/paste/workspace switches never interfere with triggers.
 
 ## How it works
 
